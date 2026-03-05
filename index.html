@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WordNest — English–Bangla Dictionary</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="bg-texture"></div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-word">Word</span><span class="logo-nest">Nest</span>
+      </div>
+      <p class="tagline">English · বাংলা Dictionary</p>
+    </div>
+  </header>
+
+  <!-- Search -->
+  <section class="search-section">
+    <div class="search-wrapper">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Search a word…" autocomplete="off" spellcheck="false" />
+        <button id="searchBtn" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </button>
+      </div>
+      <div class="search-meta" id="searchMeta"></div>
+    </div>
+  </section>
+
+  <!-- Loading -->
+  <div class="loading-wrap" id="loadingWrap">
+    <div class="loader"><span></span><span></span><span></span></div>
+    <p>Looking up the word…</p>
+  </div>
+
+  <!-- Error -->
+  <div class="error-card" id="errorCard">
+    <div class="error-icon">∅</div>
+    <h2>Word not found in dictionary</h2>
+    <p>Try checking your spelling or searching for a different word.</p>
+  </div>
+
+  <!-- Result -->
+  <main class="result" id="result">
+
+    <!-- Word Hero -->
+    <section class="word-hero">
+      <div class="word-hero-left">
+        <h1 class="word-title" id="wordTitle"></h1>
+        <div class="phonetics-row" id="phoneticsRow"></div>
+      </div>
+      <div class="word-hero-right">
+        <div class="audio-btns" id="audioBtns"></div>
+        <button class="pdf-btn" id="pdfBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Download PDF
+        </button>
+      </div>
+    </section>
+
+    <!-- Bangla meaning (collapsible) -->
+    <section class="card bangla-card collapsible" id="sec-bangla">
+      <div class="card-header" data-target="sec-bangla">
+        <div class="card-label">বাংলা অর্থ</div>
+        <button class="toggle-btn" aria-label="Toggle section">
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+      <div class="card-body">
+        <div class="bangla-meaning" id="banglaMeaning"><span class="shimmer-line"></span></div>
+      </div>
+    </section>
+
+    <!-- Meanings (collapsible) -->
+    <section class="card meanings-card collapsible" id="sec-meanings">
+      <div class="card-header" data-target="sec-meanings">
+        <div class="card-label">Meanings</div>
+        <button class="toggle-btn" aria-label="Toggle section">
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="meaningsContainer"></div>
+      </div>
+    </section>
+
+    <!-- Synonyms / Antonyms -->
+    <div class="two-col">
+      <section class="card syn-card collapsible" id="sec-syn">
+        <div class="card-header" data-target="sec-syn">
+          <div class="card-label">Synonyms</div>
+          <button class="toggle-btn" aria-label="Toggle section">
+            <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="synonymsContainer" class="tag-cloud"></div>
+        </div>
+      </section>
+      <section class="card ant-card collapsible" id="sec-ant">
+        <div class="card-header" data-target="sec-ant">
+          <div class="card-label">Antonyms</div>
+          <button class="toggle-btn" aria-label="Toggle section">
+            <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="antonymsContainer" class="tag-cloud"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Examples (collapsible) -->
+    <section class="card examples-card collapsible" id="sec-examples">
+      <div class="card-header" data-target="sec-examples">
+        <div class="card-label">Examples</div>
+        <button class="toggle-btn" aria-label="Toggle section">
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+      <div class="card-body">
+        <ul id="examplesContainer" class="examples-list"></ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Search History panel (collapsible) -->
+  <aside class="history-panel" id="historyPanel">
+    <div class="history-header" id="historyToggle">
+      <h3>Search History</h3>
+      <span class="history-count" id="historyCount">0</span>
+      <div class="history-header-actions">
+        <button class="clear-btn" id="clearHistoryBtn" title="Clear history">✕ Clear</button>
+        <button class="panel-toggle-btn" id="panelToggleBtn" title="Minimize / Maximize">
+          <svg class="chevron-panel" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="history-body" id="historyBody">
+      <ul class="history-list" id="historyList"></ul>
+    </div>
+  </aside>
+
+  <script src="script.js"></script>
+</body>
+</html>
