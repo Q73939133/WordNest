@@ -29,6 +29,132 @@ const HISTORY_KEY = 'wordnest_history';
 let currentData   = null;
 
 /* ============================================================
+   WORD SUGGESTIONS  — Full English dictionary via Datamuse API
+   + history words shown first
+   ============================================================ */
+const suggestionsList = document.getElementById('suggestionsList');
+let activeSugIdx  = -1;
+let sugDebounce   = null;
+let lastSugQuery  = '';
+const sugCache    = {};          // cache results per query prefix
+
+async function fetchWordSuggestions(query) {
+  if (sugCache[query]) return sugCache[query];
+  try {
+    // sp=query* → words that spell-start with query (full dictionary)
+    const res  = await fetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(query)}*&max=50`);
+    const data = await res.json();
+    const words = data.map(d => d.word).filter(w => w.toLowerCase().startsWith(query.toLowerCase()));
+    sugCache[query] = words;
+    return words;
+  } catch {
+    return [];
+  }
+}
+
+function highlightMatch(word, query) {
+  const idx = word.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return `<span class="sug-rest">${word}</span>`;
+  const before    = word.slice(0, idx);
+  const matched   = word.slice(idx, idx + query.length);
+  const remaining = word.slice(idx + query.length);
+  return (before ? `<span class="sug-rest">${before}</span>` : '') +
+    `<span class="sug-typed">${matched}</span>` +
+    (remaining ? `<span class="sug-rest">${remaining}</span>` : '');
+}
+
+async function renderSuggestions(query) {
+  if (!query || query.length < 1) { closeSuggestions(); return; }
+  lastSugQuery = query;
+
+  const history     = getHistory();
+  const fromHistory = history.filter(w => w.toLowerCase().startsWith(query.toLowerCase()) && w.toLowerCase() !== query.toLowerCase()).slice(0, 4);
+
+  // Show history matches immediately while API loads
+  if (fromHistory.length) {
+    buildSuggestionDOM(fromHistory.map(w => ({ word: w, isHistory: true })), query);
+  }
+
+  const apiWords  = await fetchWordSuggestions(query);
+  // Skip if user already typed something else
+  if (lastSugQuery !== query) return;
+
+  const historySet = new Set(fromHistory.map(w => w.toLowerCase()));
+  const fromApi    = apiWords
+    .filter(w => !historySet.has(w.toLowerCase()) && w.toLowerCase() !== query.toLowerCase())
+    .slice(0, 8);
+
+  const combined = [
+    ...fromHistory.map(w => ({ word: w, isHistory: true })),
+    ...fromApi.map(w => ({ word: w, isHistory: false }))
+  ].slice(0, 10);
+
+  if (!combined.length) { closeSuggestions(); return; }
+  buildSuggestionDOM(combined, query);
+}
+
+function buildSuggestionDOM(items, query) {
+  activeSugIdx = -1;
+  suggestionsList.innerHTML = items.map((item, i) => `
+    <li class="suggestion-item ${item.isHistory ? 'from-history' : ''}" data-word="${item.word}" data-idx="${i}">
+      <svg class="sug-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        ${item.isHistory
+          ? '<path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/>'
+          : '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>'}
+      </svg>
+      <span class="sug-word">${highlightMatch(item.word, query)}</span>
+    </li>
+  `).join('');
+  suggestionsList.classList.add('open');
+
+  suggestionsList.querySelectorAll('.suggestion-item').forEach(li => {
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      closeSuggestions();
+      triggerSearch(li.getAttribute('data-word'));
+    });
+  });
+}
+
+function closeSuggestions() {
+  suggestionsList.innerHTML = '';
+  suggestionsList.classList.remove('open');
+  activeSugIdx = -1;
+}
+
+function navigateSuggestions(dir) {
+  const items = suggestionsList.querySelectorAll('.suggestion-item');
+  if (!items.length) return;
+  items.forEach(i => i.classList.remove('active'));
+  if (dir === 1) activeSugIdx = activeSugIdx >= items.length - 1 ? 0 : activeSugIdx + 1;
+  else           activeSugIdx = activeSugIdx <= 0 ? items.length - 1 : activeSugIdx - 1;
+  items[activeSugIdx].classList.add('active');
+  searchInput.value = items[activeSugIdx].getAttribute('data-word');
+}
+
+// Input events
+searchInput.addEventListener('input', () => {
+  clearTimeout(sugDebounce);
+  const q = searchInput.value.trim();
+  if (!q) { closeSuggestions(); return; }
+  sugDebounce = setTimeout(() => renderSuggestions(q), 200);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); navigateSuggestions(1);  return; }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); navigateSuggestions(-1); return; }
+  if (e.key === 'Escape')    { closeSuggestions(); return; }
+  if (e.key === 'Enter') {
+    closeSuggestions();
+    triggerSearch(searchInput.value);
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-wrapper')) closeSuggestions();
+});
+
+/* ============================================================
    COLLAPSIBLE SECTIONS
    ============================================================ */
 function initCollapsibles() {
@@ -302,8 +428,7 @@ async function triggerSearch(word) {
   }
 }
 
-searchBtn.addEventListener('click', () => triggerSearch(searchInput.value));
-searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') triggerSearch(searchInput.value); });
+searchBtn.addEventListener('click', () => { closeSuggestions(); triggerSearch(searchInput.value); });
 
 /* ============================================================
    PDF  —  English meanings of EVERY history word
@@ -345,10 +470,13 @@ async function generatePDF() {
   /* Build PDF */
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const W = doc.internal.pageSize.getWidth();
-  const mL = 18, mR = 18, cW = W - mL - mR;
+  const W  = doc.internal.pageSize.getWidth();   // 210 mm
+  const mL = 16, mR = 16;
+  const cW = W - mL - mR;                        // 178 mm usable
   let y = 0;
-  let isFirstPage = true;
+
+  const LINE_H   = 5.5;   // mm per line of body text (9pt)
+  const PAGE_MAX = 276;   // mm — leave 6mm footer gap
 
   /* Helper: add a page-header blue bar */
   function pageHeader() {
@@ -366,18 +494,33 @@ async function generatePDF() {
     pageHeader();
     y = 22;
   };
-  const checkY = (n = 10) => { if (y + n > 278) addPage(); };
+
+  // checkY: ensure 'need' mm remain; if not, new page
+  const checkY = (need = 12) => { if (y + need > PAGE_MAX) addPage(); };
+
+  // writeWrapped: write text with proper wrapping, return new y
+  function writeWrapped(text, x, maxW, fontStyle, fontSize, r, g, b) {
+    doc.setFont('helvetica', fontStyle);
+    doc.setFontSize(fontSize);
+    doc.setTextColor(r, g, b);
+    const lines = doc.splitTextToSize(text, maxW);
+    const block = lines.length * LINE_H;
+    checkY(block + 2);
+    doc.text(lines, x, y);
+    y += block;
+    return y;
+  }
 
   /* First page header */
   pageHeader();
   y = 22;
 
   /* Cover line */
-  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
   doc.setTextColor(37, 99, 235);
   doc.text(`English Meanings for ${history.length} Searched Word${history.length !== 1 ? 's' : ''}`, mL, y);
-  y += 3;
+  y += 4;
   doc.setDrawColor(37, 99, 235);
   doc.setLineWidth(0.4);
   doc.line(mL, y, W - mR, y);
@@ -385,27 +528,26 @@ async function generatePDF() {
 
   /* Loop every word */
   results.forEach(({ word, entries }, wordIdx) => {
-    /* ---- Word heading ---- */
-    checkY(18);
 
-    // Numbered word title
-    doc.setFontSize(15);
+    /* ---- Word heading ---- */
+    checkY(20);
+
     doc.setFont('times', 'bold');
+    doc.setFontSize(14);
     doc.setTextColor(22, 32, 46);
     doc.text(`${wordIdx + 1}.  ${word}`, mL, y);
     y += 2;
 
-    // Thin underline
     doc.setDrawColor(200, 210, 230);
     doc.setLineWidth(0.3);
-    doc.line(mL, y, mL + cW * 0.5, y);
+    doc.line(mL, y, mL + cW * 0.45, y);
     y += 6;
 
     if (!entries) {
-      doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
       doc.setTextColor(180, 80, 80);
-      doc.text('  Word not found in dictionary.', mL + 4, y);
+      doc.text('Word not found in dictionary.', mL + 4, y);
       y += 10;
       return;
     }
@@ -413,37 +555,43 @@ async function generatePDF() {
     /* ---- Meanings per part-of-speech ---- */
     entries.forEach(entry => {
       (entry.meanings || []).forEach(meaning => {
-        checkY(12);
+        checkY(14);
 
         // POS label
-        doc.setFontSize(8.5);
         doc.setFont('helvetica', 'bolditalic');
+        doc.setFontSize(8.5);
         doc.setTextColor(13, 148, 136);
         doc.text(`[ ${meaning.partOfSpeech} ]`, mL + 3, y);
-        y += 5;
+        y += LINE_H + 0.5;
 
         meaning.definitions.forEach((def, i) => {
-          const lines = doc.splitTextToSize(`${i + 1}.  ${def.definition}`, cW - 8);
-          checkY(lines.length * 4.8 + 2);
+          // Use (cW - 10) for indented text so long words wrap correctly
+          const text  = `${i + 1}.  ${def.definition}`;
+          const indentX = mL + 6;
+          const textW   = cW - 10;
+
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(9);
           doc.setTextColor(58, 74, 92);
-          doc.text(lines, mL + 6, y);
-          y += lines.length * 4.8 + 2;
+          const lines = doc.splitTextToSize(text, textW);
+          const blockH = lines.length * LINE_H;
+          checkY(blockH + 2);
+          doc.text(lines, indentX, y);
+          y += blockH + 2;
         });
         y += 3;
       });
     });
 
-    /* Gap between words */
-    y += 4;
+    y += 3;
 
-    /* Light separator between words (not after last) */
+    /* Light separator between words */
     if (wordIdx < results.length - 1) {
       checkY(8);
       doc.setDrawColor(220, 230, 242);
-      doc.setLineWidth(0.25);
-      doc.line(mL, y - 2, W - mR, y - 2);
+      doc.setLineWidth(0.22);
+      doc.line(mL, y, W - mR, y);
+      y += 6;
     }
   });
 
